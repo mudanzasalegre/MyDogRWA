@@ -7,7 +7,6 @@ contract Custodian is AccessControl {
     bytes32 public constant CUSTODIAN_ROLE = keccak256("CUSTODIAN_ROLE");
 
     mapping(address => uint256) private _frozenBalances;
-    mapping(address => uint256) private _balances; // Simula balances internos para pruebas
 
     event TokensFrozen(address indexed user, uint256 amount);
     event TokensUnfrozen(address indexed user, uint256 amount);
@@ -17,15 +16,16 @@ contract Custodian is AccessControl {
         _grantRole(CUSTODIAN_ROLE, msg.sender);
     }
 
+    // Congela tokens para un usuario
     function freeze(address user, uint256 amount)
         public
         onlyRole(CUSTODIAN_ROLE)
     {
-        require(_balances[user] >= amount, "Insufficient unfrozen balance");
         _frozenBalances[user] += amount;
         emit TokensFrozen(user, amount);
     }
 
+    // Descongela tokens para un usuario
     function unfreeze(address user, uint256 amount)
         public
         onlyRole(CUSTODIAN_ROLE)
@@ -35,7 +35,18 @@ contract Custodian is AccessControl {
         emit TokensUnfrozen(user, amount);
     }
 
+    // Devuelve los tokens congelados de un usuario
     function frozenBalance(address user) public view returns (uint256) {
         return _frozenBalances[user];
+    }
+
+    // Devuelve el saldo disponible (balance total - congelado)
+    function availableBalance(address user, uint256 totalBalance)
+        public
+        view
+        returns (uint256)
+    {
+        require(totalBalance >= _frozenBalances[user], "Invalid balance");
+        return totalBalance - _frozenBalances[user];
     }
 }
