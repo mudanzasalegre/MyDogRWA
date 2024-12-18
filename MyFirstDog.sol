@@ -32,12 +32,10 @@ contract MyFirstDog is
     Allowlist public allowlistContract;
     ITreasury public treasury;
 
-    constructor(
-        address custodianAddress,
-        address allowlistAddress,
-        address treasuryAddress
-    ) ERC20("MyFirstDog", "MFD") ERC20Permit("MyFirstDog") {
-        require(custodianAddress != address(0), "Custodian cannot be zero");
+    constructor(address allowlistAddress, address treasuryAddress)
+        ERC20("MyFirstDog", "MFD")
+        ERC20Permit("MyFirstDog")
+    {
         require(allowlistAddress != address(0), "Allowlist cannot be zero");
         require(treasuryAddress != address(0), "Treasury cannot be zero");
 
@@ -45,11 +43,23 @@ contract MyFirstDog is
         _grantRole(MINTER_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
 
-        custodianContract = Custodian(custodianAddress);
         allowlistContract = Allowlist(allowlistAddress);
         treasury = ITreasury(treasuryAddress);
 
         _mint(msg.sender, 1); // Mint inicial
+    }
+
+    // Configura el Custodian después del despliegue
+    function initializeCustodian(address custodianAddress)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        require(
+            address(custodianContract) == address(0),
+            "Custodian already set"
+        );
+        require(custodianAddress != address(0), "Invalid custodian address");
+        custodianContract = Custodian(custodianAddress);
     }
 
     function decimals() public pure override returns (uint8) {
@@ -97,11 +107,16 @@ contract MyFirstDog is
         address to,
         uint256 value
     ) internal override(ERC20, ERC20Pausable) {
-        uint256 userTotalBalance = balanceOf(from); // Obtener balance total del usuario
+        uint256 totalBalance = balanceOf(from); // Balance total del usuario
+        uint256 frozenBalance = custodianContract.frozenBalance(from); // Balance congelado
+
+        // Validar que el usuario tiene suficientes fondos no congelados
         require(
-            custodianContract.availableBalance(from, userTotalBalance) >= value,
+            totalBalance - frozenBalance >= value,
             "Custodian: Insufficient available balance"
         );
+
+        // Proceder con la transferencia si pasa todas las validaciones
         super._update(from, to, value);
     }
 }

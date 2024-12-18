@@ -3,10 +3,15 @@ pragma solidity ^0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
+interface IERC20Balance {
+    function balanceOf(address user) external view returns (uint256);
+}
+
 contract Custodian is AccessControl {
     bytes32 public constant CUSTODIAN_ROLE = keccak256("CUSTODIAN_ROLE");
 
     mapping(address => uint256) private _frozenBalances;
+    address private _tokenContract; // Dirección del token
 
     event TokensFrozen(address indexed user, uint256 amount);
     event TokensUnfrozen(address indexed user, uint256 amount);
@@ -15,6 +20,19 @@ contract Custodian is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(CUSTODIAN_ROLE, msg.sender);
     }
+
+    // Configura la dirección del contrato del token
+    function initialize(address tokenContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_tokenContract == address(0), "Already initialized");
+        require(tokenContract != address(0), "Invalid token address");
+        _tokenContract = tokenContract;
+    }
+
+    // Obtener balance desde el token
+    function availableBalance(address user) public view returns (uint256) {
+        return IERC20Balance(_tokenContract).balanceOf(user) - _frozenBalances[user];
+    }
+
 
     // Congela tokens para un usuario
     function freeze(address user, uint256 amount)
@@ -41,7 +59,7 @@ contract Custodian is AccessControl {
     }
 
     // Devuelve el saldo disponible (balance total - congelado)
-    function availableBalance(address user, uint256 totalBalance)
+    function calculateAvailableBalance(address user, uint256 totalBalance)
         public
         view
         returns (uint256)
