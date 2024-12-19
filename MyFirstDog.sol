@@ -49,15 +49,13 @@ contract MyFirstDog is
         _mint(msg.sender, 1); // Mint inicial
     }
 
-    // Configura el Custodian después del despliegue
+    // ---- Inicializadores ----
+
     function initializeCustodian(address custodianAddress)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(
-            address(custodianContract) == address(0),
-            "Custodian already set"
-        );
+        require(address(custodianContract) == address(0), "Custodian already set");
         require(custodianAddress != address(0), "Invalid custodian address");
         custodianContract = Custodian(custodianAddress);
     }
@@ -68,18 +66,16 @@ contract MyFirstDog is
 
     // ---- Compra de Tokens ----
     function buy() external payable {
-        require(
-            allowlistContract.isAllowed(msg.sender),
-            "Allowlist: Not allowed"
-        );
+        require(address(allowlistContract) != address(0), "Allowlist not initialized");
+        require(address(treasury) != address(0), "Treasury not initialized");
+
+        require(allowlistContract.isAllowed(msg.sender), "Allowlist: Not allowed");
         require(msg.value == PRICE, "Incorrect payment amount");
         require(!hasPurchased[msg.sender], "Already purchased");
         require(totalSupply() + 1 <= MAX_SUPPLY, "Max supply reached");
 
         // Enviar fondos al Tesoro
-        (bool success, ) = payable(address(treasury)).call{value: msg.value}(
-            ""
-        );
+        (bool success, ) = payable(address(treasury)).call{value: msg.value}("");
         require(success, "Transfer to Treasury failed");
 
         hasPurchased[msg.sender] = true;
@@ -108,13 +104,16 @@ contract MyFirstDog is
         uint256 value
     ) internal override(ERC20, ERC20Pausable) {
         uint256 totalBalance = balanceOf(from); // Balance total del usuario
-        uint256 frozenBalance = custodianContract.frozenBalance(from); // Balance congelado
 
-        // Validar que el usuario tiene suficientes fondos no congelados
-        require(
-            totalBalance - frozenBalance >= value,
-            "Custodian: Insufficient available balance"
-        );
+        if (address(custodianContract) != address(0)) {
+            uint256 frozenBalance = custodianContract.frozenBalance(from); // Balance congelado
+
+            // Validar que el usuario tiene suficientes fondos no congelados
+            require(
+                totalBalance - frozenBalance >= value,
+                "Custodian: Insufficient available balance"
+            );
+        }
 
         // Proceder con la transferencia si pasa todas las validaciones
         super._update(from, to, value);

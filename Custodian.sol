@@ -22,32 +22,26 @@ contract Custodian is AccessControl {
     }
 
     // Configura la dirección del contrato del token
-    function initialize(address tokenContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokenContract == address(0), "Already initialized");
+    function setTokenContract(address tokenContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_tokenContract == address(0), "Token contract already set");
         require(tokenContract != address(0), "Invalid token address");
         _tokenContract = tokenContract;
     }
 
     // Obtener balance desde el token
     function availableBalance(address user) public view returns (uint256) {
+        require(_tokenContract != address(0), "Token contract not set");
         return IERC20Balance(_tokenContract).balanceOf(user) - _frozenBalances[user];
     }
 
-
     // Congela tokens para un usuario
-    function freeze(address user, uint256 amount)
-        public
-        onlyRole(CUSTODIAN_ROLE)
-    {
+    function freeze(address user, uint256 amount) public onlyRole(CUSTODIAN_ROLE) {
         _frozenBalances[user] += amount;
         emit TokensFrozen(user, amount);
     }
 
     // Descongela tokens para un usuario
-    function unfreeze(address user, uint256 amount)
-        public
-        onlyRole(CUSTODIAN_ROLE)
-    {
+    function unfreeze(address user, uint256 amount) public onlyRole(CUSTODIAN_ROLE) {
         require(_frozenBalances[user] >= amount, "Insufficient frozen balance");
         _frozenBalances[user] -= amount;
         emit TokensUnfrozen(user, amount);
@@ -56,15 +50,5 @@ contract Custodian is AccessControl {
     // Devuelve los tokens congelados de un usuario
     function frozenBalance(address user) public view returns (uint256) {
         return _frozenBalances[user];
-    }
-
-    // Devuelve el saldo disponible (balance total - congelado)
-    function calculateAvailableBalance(address user, uint256 totalBalance)
-        public
-        view
-        returns (uint256)
-    {
-        require(totalBalance >= _frozenBalances[user], "Invalid balance");
-        return totalBalance - _frozenBalances[user];
     }
 }
