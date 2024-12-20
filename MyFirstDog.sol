@@ -68,7 +68,7 @@ contract MyFirstDog is
     }
 
     // ---- Compra de Tokens ----
-    function buy() external payable {
+    function buy() external payable whenNotPaused {
         require(
             address(allowlistContract) != address(0),
             "Allowlist not initialized"
@@ -84,9 +84,7 @@ contract MyFirstDog is
         require(totalSupply() + 1 <= MAX_SUPPLY, "Max supply reached");
 
         // Enviar fondos al Tesoro
-        (bool success, ) = payable(address(treasury)).call{value: msg.value}(
-            ""
-        );
+        (bool success, ) = payable(address(treasury)).call{value: msg.value}("");
         require(success, "Transfer to Treasury failed");
 
         hasPurchased[msg.sender] = true;
