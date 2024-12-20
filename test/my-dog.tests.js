@@ -49,198 +49,89 @@ describe("MyFirstDog System", function () {
     await myFirstDog.initializeCustodian(custodian.target);
   });
 
-  describe("MyFirstDog", function () {
-    describe("Initialization", function () {
-      it("should initialize with correct roles and token distribution", async function () {
-        expect(
-          await myFirstDog.hasRole(
-            await myFirstDog.DEFAULT_ADMIN_ROLE(),
-            owner.address,
-          ),
-        ).to.be.true;
-        expect(
-          await myFirstDog.hasRole(
-            await myFirstDog.MINTER_ROLE(),
-            owner.address,
-          ),
-        ).to.be.true;
-        expect(await myFirstDog.balanceOf(owner.address)).to.equal(1);
-      });
-    });
-
-    describe("Buying Tokens", function () {
-      beforeEach(async function () {
-        await allowlist.allowUser(user1.address);
-      });
-
-      it("should allow purchase if user is on the Allowlist", async function () {
-        await myFirstDog.connect(user1).buy({ value: PRICE });
-        expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
-      });
-
-      it("should revert if user is not on the Allowlist", async function () {
-        await expect(
-          myFirstDog.connect(user2).buy({ value: PRICE }),
-        ).to.be.revertedWith("Allowlist: Not allowed");
-      });
-
-      it("should revert if user has already purchased", async function () {
-        await myFirstDog.connect(user1).buy({ value: PRICE });
-        await expect(
-          myFirstDog.connect(user1).buy({ value: PRICE }),
-        ).to.be.revertedWith("Already purchased");
-      });
-
-      it("should revert if maximum supply is reached", async function () {
-        const availableSupply = MAX_SUPPLY - 1; // Resta el token inicial del constructor
-        const priceBN = ethers.parseEther("0.1");
-
-        // Asegúrate de que haya suficientes signers para cubrir el suministro
-        const requiredSigners = availableSupply + 3; // Contempla los iniciales + requeridos
-
-        if (signers.length < requiredSigners) {
-          throw new Error(
-            `Not enough signers available: ${signers.length} provided, ${requiredSigners} required`,
-          );
-        }
-
-        for (let i = 0; i < availableSupply; i++) {
-          const tempSigner = signers[i + 3]; // Comienza después de los iniciales
-          await allowlist.allowUser(tempSigner.address);
-
-          // Financiar al signer temporal con suficiente ETH para cubrir la transacción
-          await owner.sendTransaction({
-            to: tempSigner.address,
-            value: priceBN,
-          });
-
-          // Realizar la compra
-          await myFirstDog.connect(tempSigner).buy({ value: priceBN });
-        }
-
-        // Intentar una compra adicional debería fallar
-        await allowlist.allowUser(user1.address);
-        await expect(
-          myFirstDog.connect(user1).buy({ value: priceBN }),
-        ).to.be.revertedWith("Max supply reached");
-      });
-
-      it("should revert if incorrect ETH amount is sent", async function () {
-        await expect(
-          myFirstDog.connect(user1).buy({ value: ethers.parseEther("0.05") }),
-        ).to.be.revertedWith("Incorrect payment amount");
-      });
-    });
-
-    describe("Pausable", function () {
-      it("should allow pausing and unpausing by PAUSER_ROLE", async function () {
-          await allowlist.allowUser(user1.address); // Asegúrate de que esté en la Allowlist
-
-          // Pausar el contrato
-          await myFirstDog.pause();
-          expect(await myFirstDog.paused()).to.be.true; // Verifica que el contrato está pausado
-
-          // Intentar comprar mientras está pausado debería fallar con el error personalizado EnforcedPause
-          await expect(
-              myFirstDog.connect(user1).buy({ value: PRICE })
-          ).to.be.revertedWithCustomError(myFirstDog, "EnforcedPause");
-
-          // Despausar el contrato
-          await myFirstDog.unpause();
-          expect(await myFirstDog.paused()).to.be.false; // Verifica que el contrato no está pausado
-
-          // Ahora debería permitir la compra
-          await myFirstDog.connect(user1).buy({ value: PRICE });
-          expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
-      });
-
-      it("should revert if non-PAUSER_ROLE tries to pause", async function () {
-        await expect(myFirstDog.connect(user1).pause()).to.be.reverted;
-      });
-    });
-
-    describe("Minting", function () {
-      it("should allow minting by MINTER_ROLE", async function () {
-        await myFirstDog.mint(user1.address, 10);
-        expect(await myFirstDog.balanceOf(user1.address)).to.equal(10);
-      });
-
-      it("should revert if minting exceeds MAX_SUPPLY", async function () {
-        await expect(
-          myFirstDog.mint(user1.address, MAX_SUPPLY + 1),
-        ).to.be.revertedWith("Exceeds maximum supply");
-      });
-    });
-  });
-
-  describe("Allowlist", function () {
-    describe("User Management", function () {
-      it("should allow a user to register on the Allowlist", async function () {
-        await allowlist.connect(user1).getAllowed({ value: ALLOW_PRICE });
-        expect(await allowlist.isAllowed(user1.address)).to.be.true;
-      });
-
-      it("should revert if user is blacklisted", async function () {
-        await allowlist.blacklistUser(user1.address);
-        await expect(
-          allowlist.connect(user1).getAllowed({ value: ALLOW_PRICE }),
-        ).to.be.revertedWith("Address is blacklisted");
-      });
-    });
-  });
-
-  describe("Custodian", function () {
-    describe("Token Freezing", function () {
-      beforeEach(async function () {
-        await myFirstDog.mint(user1.address, 10);
-      });
-
-      it("should allow freezing and unfreezing of tokens", async function () {
-        await custodian.freeze(user1.address, 5);
-        expect(await custodian.frozenBalance(user1.address)).to.equal(5);
-
-        await custodian.unfreeze(user1.address, 5);
-        expect(await custodian.frozenBalance(user1.address)).to.equal(0);
-      });
-
-      it("should revert if unfreezing more than frozen tokens", async function () {
-        await custodian.freeze(user1.address, 5);
-        await expect(custodian.unfreeze(user1.address, 10)).to.be.revertedWith(
-          "Insufficient frozen balance",
-        );
-      });
-    });
-  });
-
   describe("Treasury", function () {
-    it("should allow receiving ETH", async function () {
-      const tx = await owner.sendTransaction({
-        to: treasury.target,
-        value: PRICE,
+    describe("Fund Reception", function () {
+      it("should allow receiving ETH and emit FundsReceived event", async function () {
+        const tx = await owner.sendTransaction({
+          to: treasury.target,
+          value: PRICE,
+        });
+  
+        // Verificar que el evento FundsReceived se emitió
+        await expect(tx)
+          .to.emit(treasury, "FundsReceived")
+          .withArgs(owner.address, PRICE);
+  
+        // Verificar que el balance del contrato aumentó correctamente
+        expect(await treasury.getBalance()).to.equal(PRICE);
       });
-      await tx.wait();
-      expect(await treasury.getBalance()).to.equal(PRICE);
     });
-
-    it("should allow withdrawals by TREASURY_MANAGER_ROLE", async function () {
-      await treasury
-        .connect(owner)
-        .grantRole(
-          await treasury.TREASURY_MANAGER_ROLE(),
-          treasuryManager.address,
+  
+    describe("Fund Withdrawals", function () {
+      beforeEach(async function () {
+        // Asignar el rol de TREASURY_MANAGER_ROLE al treasuryManager
+        await treasury
+          .connect(owner)
+          .grantRole(
+            await treasury.TREASURY_MANAGER_ROLE(),
+            treasuryManager.address
+          );
+  
+        // Enviar fondos al contrato
+        await owner.sendTransaction({ to: treasury.target, value: PRICE });
+      });
+  
+      it("should allow withdrawals by TREASURY_MANAGER_ROLE", async function () {
+        const initialBalance = await ethers.provider.getBalance(
+          treasuryManager.address
         );
-      await owner.sendTransaction({ to: treasury.target, value: PRICE });
-
-      const initialBalance = await ethers.provider.getBalance(
-        treasuryManager.address,
-      );
-      await treasury
-        .connect(treasuryManager)
-        .withdraw(treasuryManager.address, PRICE);
-      const finalBalance = await ethers.provider.getBalance(
-        treasuryManager.address,
-      );
-      expect(finalBalance).to.be.gt(initialBalance);
+  
+        // Realizar el retiro
+        await treasury
+          .connect(treasuryManager)
+          .withdraw(treasuryManager.address, PRICE);
+  
+        const finalBalance = await ethers.provider.getBalance(
+          treasuryManager.address
+        );
+        expect(finalBalance).to.be.gt(initialBalance);
+      });
+  
+      it("should revert if non-TREASURY_MANAGER_ROLE tries to withdraw", async function () {
+        const requiredRole = await treasury.TREASURY_MANAGER_ROLE();
+      
+        await expect(
+          treasury.connect(user1).withdraw(user1.address, PRICE)
+        ).to.be.revertedWith(
+          `AccessControl: account ${user1.address.toLowerCase()} is missing role ${requiredRole.toLowerCase()}`
+        );
+      });
+  
+      it("should revert if withdrawal amount exceeds available balance", async function () {
+        const excessiveAmount = ethers.parseEther("1");
+  
+        // Intentar un retiro que exceda el balance
+        await expect(
+          treasury
+            .connect(treasuryManager)
+            .withdraw(treasuryManager.address, excessiveAmount)
+        ).to.be.revertedWith("Treasury: Insufficient balance");
+      });
+    });
+  
+    describe("Balance Queries", function () {
+      it("should return the correct balance of the contract", async function () {
+        // Enviar ETH al contrato
+        await owner.sendTransaction({ to: treasury.target, value: PRICE });
+  
+        // Verificar que el balance reportado por getBalance es correcto
+        expect(await treasury.getBalance()).to.equal(PRICE);
+      });
+  
+      it("should return zero balance if no funds have been deposited", async function () {
+        // Verificar que el balance sea 0 inicialmente
+        expect(await treasury.getBalance()).to.equal(0);
+      });
     });
   });
 

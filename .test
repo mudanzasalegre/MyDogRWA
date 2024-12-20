@@ -1,0 +1,361 @@
+// TO DO
+
+3. Tests para MyFirstDog
+	1.	Restricciones de compra:
+	•	Confirmar que buy no permite compras cuando el contrato está pausado.
+	•	Verificar que los usuarios puedan comprar solo si están en la allowlist.
+	2.	Eventos en compras:
+	•	Comprobar que se emiten los eventos correctos cuando se realiza una compra exitosa.
+	3.	Función de minting:
+	•	Confirmar que solo los usuarios con el rol MINTER_ROLE puedan mintear tokens.
+	•	Probar que la función de mint se revierte si se excede el máximo suministro.
+	4.	Roles y permisos:
+	•	Validar que solo los usuarios con DEFAULT_ADMIN_ROLE puedan asignar roles.
+	•	Probar que las funciones protegidas se revierten si son llamadas por usuarios no autorizados.
+	5.	Pausable:
+	•	Verificar que las funciones restringidas por whenNotPaused se revierten si el contrato está pausado.
+	•	Confirmar que los eventos Paused y Unpaused se emiten correctamente.
+
+
+5. Tests de Integración
+	1.	Flujo completo de compra:
+	•	Confirmar que un usuario pueda:
+	1.	Registrarse en la allowlist.
+	2.	Comprar un token exitosamente.
+	3.	Verificar su balance después de la compra.
+	2.	Interacción con Custodian:
+	•	Probar que los tokens adquiridos puedan ser congelados y descongelados correctamente.
+	3.	Flujo con Tesoro:
+	•	Verificar que los fondos enviados en la compra lleguen al contrato Treasury y que puedan ser retirados.
+	4.	Errores comunes:
+	•	Confirmar que las funciones clave se revierten en condiciones adversas (sin fondos suficientes, contratos no inicializados, etc.).
+
+6. Tests de Seguridad
+	1.	Reentrancy:
+	•	Asegurar que el contrato no sea vulnerable a ataques de reentrancy durante transferencias de fondos.
+	2.	Roles no autorizados:
+	•	Probar que funciones protegidas no puedan ser ejecutadas por usuarios sin permisos.
+	3.	Límites de suministro:
+	•	Validar que el suministro máximo no pueda ser excedido bajo ninguna circunstancia.
+
+
+
+  describe("MyFirstDog", function () {
+    describe("Initialization", function () {
+      it("should initialize with correct roles and token distribution", async function () {
+        expect(
+          await myFirstDog.hasRole(
+            await myFirstDog.DEFAULT_ADMIN_ROLE(),
+            owner.address,
+          ),
+        ).to.be.true;
+        expect(
+          await myFirstDog.hasRole(
+            await myFirstDog.MINTER_ROLE(),
+            owner.address,
+          ),
+        ).to.be.true;
+        expect(await myFirstDog.balanceOf(owner.address)).to.equal(1);
+      });
+    });
+
+    describe("Buying Tokens", function () {
+      beforeEach(async function () {
+        await allowlist.allowUser(user1.address);
+      });
+
+      it("should allow purchase if user is on the Allowlist", async function () {
+        await myFirstDog.connect(user1).buy({ value: PRICE });
+        expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
+      });
+
+      it("should revert if user is not on the Allowlist", async function () {
+        await expect(
+          myFirstDog.connect(user2).buy({ value: PRICE }),
+        ).to.be.revertedWith("Allowlist: Not allowed");
+      });
+
+      it("should revert if user has already purchased", async function () {
+        await myFirstDog.connect(user1).buy({ value: PRICE });
+        await expect(
+          myFirstDog.connect(user1).buy({ value: PRICE }),
+        ).to.be.revertedWith("Already purchased");
+      });
+
+      it("should revert if maximum supply is reached", async function () {
+        const availableSupply = MAX_SUPPLY - 1; // Resta el token inicial del constructor
+        const priceBN = ethers.parseEther("0.1");
+
+        // Asegúrate de que haya suficientes signers para cubrir el suministro
+        const requiredSigners = availableSupply + 3; // Contempla los iniciales + requeridos
+
+        if (signers.length < requiredSigners) {
+          throw new Error(
+            `Not enough signers available: ${signers.length} provided, ${requiredSigners} required`,
+          );
+        }
+
+        for (let i = 0; i < availableSupply; i++) {
+          const tempSigner = signers[i + 3]; // Comienza después de los iniciales
+          await allowlist.allowUser(tempSigner.address);
+
+          // Financiar al signer temporal con suficiente ETH para cubrir la transacción
+          await owner.sendTransaction({
+            to: tempSigner.address,
+            value: priceBN,
+          });
+
+          // Realizar la compra
+          await myFirstDog.connect(tempSigner).buy({ value: priceBN });
+        }
+
+        // Intentar una compra adicional debería fallar
+        await allowlist.allowUser(user1.address);
+        await expect(
+          myFirstDog.connect(user1).buy({ value: priceBN }),
+        ).to.be.revertedWith("Max supply reached");
+      });
+
+      it("should revert if incorrect ETH amount is sent", async function () {
+        await expect(
+          myFirstDog.connect(user1).buy({ value: ethers.parseEther("0.05") }),
+        ).to.be.revertedWith("Incorrect payment amount");
+      });
+    });
+
+    describe("Pausable", function () {
+      it("should allow pausing and unpausing by PAUSER_ROLE", async function () {
+        await allowlist.allowUser(user1.address); // Asegúrate de que esté en la Allowlist
+
+        // Pausar el contrato
+        await myFirstDog.pause();
+        expect(await myFirstDog.paused()).to.be.true; // Verifica que el contrato está pausado
+
+        // Intentar comprar mientras está pausado debería fallar con el error personalizado EnforcedPause
+        await expect(
+          myFirstDog.connect(user1).buy({ value: PRICE })
+        ).to.be.revertedWithCustomError(myFirstDog, "EnforcedPause");
+
+        // Despausar el contrato
+        await myFirstDog.unpause();
+        expect(await myFirstDog.paused()).to.be.false; // Verifica que el contrato no está pausado
+
+        // Ahora debería permitir la compra
+        await myFirstDog.connect(user1).buy({ value: PRICE });
+        expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
+      });
+
+      it("should revert if non-PAUSER_ROLE tries to pause", async function () {
+        await expect(myFirstDog.connect(user1).pause()).to.be.reverted;
+      });
+    });
+
+    describe("Minting", function () {
+      it("should allow minting by MINTER_ROLE", async function () {
+        await myFirstDog.mint(user1.address, 10);
+        expect(await myFirstDog.balanceOf(user1.address)).to.equal(10);
+      });
+
+      it("should revert if minting exceeds MAX_SUPPLY", async function () {
+        await expect(
+          myFirstDog.mint(user1.address, MAX_SUPPLY + 1),
+        ).to.be.revertedWith("Exceeds maximum supply");
+      });
+    });
+  });
+
+  describe("Allowlist", function () {
+    describe("User Management", function () {
+      it("should allow a user to register on the Allowlist", async function () {
+        const tx = await allowlist.connect(user1).getAllowed({ value: ALLOW_PRICE });
+
+        // Verificar que el evento UserAllowed se emitió
+        await expect(tx)
+          .to.emit(allowlist, "UserAllowed")
+          .withArgs(user1.address);
+
+        // Verificar que el usuario está en la Allowlist
+        expect(await allowlist.isAllowed(user1.address)).to.be.true;
+      });
+
+      it("should revert if user is blacklisted", async function () {
+        // Poner al usuario en la lista negra
+        const tx = await allowlist.blacklistUser(user1.address);
+      
+        // Verificar que el evento UserBlacklisted se emitió
+        await expect(tx)
+          .to.emit(allowlist, "UserBlacklisted")
+          .withArgs(user1.address);
+      
+        // Intentar registrarse debería fallar
+        await expect(
+          allowlist.connect(user1).getAllowed({ value: ALLOW_PRICE })
+        ).to.be.revertedWith("Address is blacklisted");
+      });
+
+      it("should allow removing a user from the blacklist", async function () {
+        await allowlist.blacklistUser(user1.address);
+
+        // Eliminar de la blacklist
+        const tx = await allowlist.unBlacklistUser(user1.address);
+
+        // Verificar que el evento UserUnBlacklisted se emitió
+        await expect(tx)
+          .to.emit(allowlist, "UserUnBlacklisted")
+          .withArgs(user1.address);
+
+        // Verificar que el usuario no está en la blacklist
+        expect(await allowlist.isBlacklisted(user1.address)).to.be.false;
+      });
+
+      it("should allow updating the Allowlist price", async function () {
+        const newPrice = ethers.parseEther("0.02");
+
+        // Actualizar el precio de la Allowlist
+        const tx = await allowlist.setAllowPrice(newPrice);
+
+        // Verificar que el evento AllowPriceUpdated se emitió
+        await expect(tx)
+          .to.emit(allowlist, "AllowPriceUpdated")
+          .withArgs(newPrice);
+
+        // Verificar que el precio se actualizó
+        expect(await allowlist.getAllowPrice()).to.equal(newPrice);
+      });
+
+      it("should revert if non-admin tries to update Allowlist price", async function () {
+        const newPrice = ethers.parseEther("0.02");
+      
+        // Intentar actualizar el precio desde un usuario sin permisos
+        await expect(
+          allowlist.connect(user1).setAllowPrice(newPrice)
+        ).to.be.revertedWithCustomError(
+          allowlist,
+          "AccessControlUnauthorizedAccount"
+        );
+      });
+
+      it("should revert if payment amount is incorrect", async function () {
+        // Intentar registrarse con un pago incorrecto
+        await expect(
+          allowlist.connect(user1).getAllowed({ value: ethers.parseEther("0.005") })
+        ).to.be.revertedWith("Incorrect payment amount");
+      });
+    });
+
+    describe("Event Emission", function () {
+      it("should emit UserAllowed event when a user is added to the Allowlist", async function () {
+        const tx = await allowlist.connect(user1).getAllowed({ value: ALLOW_PRICE });
+        await expect(tx)
+          .to.emit(allowlist, "UserAllowed")
+          .withArgs(user1.address);
+      });
+
+      it("should emit UserBlacklisted event when a user is blacklisted", async function () {
+        const tx = await allowlist.blacklistUser(user1.address);
+        await expect(tx)
+          .to.emit(allowlist, "UserBlacklisted")
+          .withArgs(user1.address);
+      });
+
+      it("should emit UserUnBlacklisted event when a user is removed from the blacklist", async function () {
+        await allowlist.blacklistUser(user1.address);
+        const tx = await allowlist.unBlacklistUser(user1.address);
+        await expect(tx)
+          .to.emit(allowlist, "UserUnBlacklisted")
+          .withArgs(user1.address);
+      });
+
+      it("should emit AllowPriceUpdated event when the price is updated", async function () {
+        const newPrice = ethers.parseEther("0.02");
+        const tx = await allowlist.setAllowPrice(newPrice);
+        await expect(tx)
+          .to.emit(allowlist, "AllowPriceUpdated")
+          .withArgs(newPrice);
+      });
+    });
+  });
+
+  describe("Custodian", function () {
+    beforeEach(async function () {
+      // Mint tokens para el usuario antes de cada prueba
+      await myFirstDog.mint(user1.address, 10);
+    });
+  
+    describe("Token Freezing and Unfreezing", function () {
+      it("should allow freezing and unfreezing of tokens", async function () {
+        await custodian.freeze(user1.address, 5);
+        expect(await custodian.frozenBalance(user1.address)).to.equal(5);
+  
+        await custodian.unfreeze(user1.address, 5);
+        expect(await custodian.frozenBalance(user1.address)).to.equal(0);
+      });
+  
+      it("should revert if unfreezing more than frozen tokens", async function () {
+        await custodian.freeze(user1.address, 5);
+        await expect(custodian.unfreeze(user1.address, 10)).to.be.revertedWith(
+          "Insufficient frozen balance"
+        );
+      });
+  
+      it("should not allow freezing more tokens than the user has available", async function () {
+        await expect(custodian.freeze(user1.address, 15)).to.be.revertedWith(
+          "Custodian: Insufficient available balance"
+        );
+      });
+  
+      it("should not allow unfreezing more tokens than are frozen", async function () {
+        await custodian.freeze(user1.address, 5);
+        await expect(custodian.unfreeze(user1.address, 10)).to.be.revertedWith(
+          "Insufficient frozen balance"
+        );
+      });
+    });
+  
+    describe("Contract Initialization", function () {
+      it("should not allow setting the token contract more than once", async function () {
+        await expect(
+          custodian.setTokenContract(myFirstDog.target)
+        ).to.be.revertedWith("Token contract already set");
+      });
+  
+      it("should revert freezing if token contract is not set", async function () {
+        const Custodian = await ethers.getContractFactory("Custodian");
+        const newCustodian = await Custodian.deploy();
+  
+        await expect(newCustodian.freeze(user1.address, 5)).to.be.revertedWith(
+          "Token contract not set"
+        );
+      });
+  
+      it("should revert unfreezing if token contract is not set", async function () {
+        const Custodian = await ethers.getContractFactory("Custodian");
+        const newCustodian = await Custodian.deploy();
+  
+        await expect(newCustodian.unfreeze(user1.address, 5)).to.be.revertedWith(
+          "Token contract not set"
+        );
+      });
+    });
+  
+    describe("Balance Queries", function () {
+      it("should return correct available balance considering frozen tokens", async function () {
+        await custodian.freeze(user1.address, 5);
+  
+        const availableBalance = await custodian.availableBalance(user1.address);
+        expect(availableBalance).to.equal(5); // 10 - 5 tokens congelados
+      });
+  
+      it("should return full balance if no tokens are frozen", async function () {
+        const availableBalance = await custodian.availableBalance(user1.address);
+        expect(availableBalance).to.equal(10); // Todos los tokens disponibles
+      });
+  
+      it("should return zero available balance if all tokens are frozen", async function () {
+        await custodian.freeze(user1.address, 10);
+  
+        const availableBalance = await custodian.availableBalance(user1.address);
+        expect(availableBalance).to.equal(0); // Todos los tokens están congelados
+      });
+    });
+  });

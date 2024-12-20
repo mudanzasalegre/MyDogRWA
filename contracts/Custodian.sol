@@ -36,12 +36,15 @@ contract Custodian is AccessControl {
 
     // Congela tokens para un usuario
     function freeze(address user, uint256 amount) public onlyRole(CUSTODIAN_ROLE) {
+        require(_tokenContract != address(0), "Token contract not set");
+        require(amount <= availableBalance(user), "Custodian: Insufficient available balance");
         _frozenBalances[user] += amount;
         emit TokensFrozen(user, amount);
     }
 
     // Descongela tokens para un usuario
     function unfreeze(address user, uint256 amount) public onlyRole(CUSTODIAN_ROLE) {
+        require(_tokenContract != address(0), "Token contract not set");
         require(_frozenBalances[user] >= amount, "Insufficient frozen balance");
         _frozenBalances[user] -= amount;
         emit TokensUnfrozen(user, amount);
