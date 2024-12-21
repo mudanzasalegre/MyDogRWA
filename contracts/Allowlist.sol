@@ -2,12 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 
 interface ITreasury {
     function getBalance() external view returns (uint256);
 }
 
-contract Allowlist is AccessControl {
+contract Allowlist is AccessControl, ReentrancyGuard {
     bytes32 public constant LIMITER_ROLE = keccak256("LIMITER_ROLE");
     mapping(address => bool) private _allowlist;
     mapping(address => bool) private _blacklist;
@@ -32,7 +34,7 @@ contract Allowlist is AccessControl {
         treasury = ITreasury(treasuryAddress);
     }
 
-    function getAllowed() public payable {
+    function getAllowed() public payable nonReentrant {
         require(msg.value == _allowPrice, "Incorrect payment amount");
         require(!_blacklist[msg.sender], "Address is blacklisted");
         require(!_allowlist[msg.sender], "Address is already allowed");

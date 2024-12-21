@@ -1,42 +1,6 @@
 // TO DO
 
-3. Tests para MyFirstDog
-	1.	Restricciones de compra:
-	•	Confirmar que buy no permite compras cuando el contrato está pausado.
-	•	Verificar que los usuarios puedan comprar solo si están en la allowlist.
-	2.	Eventos en compras:
-	•	Comprobar que se emiten los eventos correctos cuando se realiza una compra exitosa.
-	3.	Función de minting:
-	•	Confirmar que solo los usuarios con el rol MINTER_ROLE puedan mintear tokens.
-	•	Probar que la función de mint se revierte si se excede el máximo suministro.
-	4.	Roles y permisos:
-	•	Validar que solo los usuarios con DEFAULT_ADMIN_ROLE puedan asignar roles.
-	•	Probar que las funciones protegidas se revierten si son llamadas por usuarios no autorizados.
-	5.	Pausable:
-	•	Verificar que las funciones restringidas por whenNotPaused se revierten si el contrato está pausado.
-	•	Confirmar que los eventos Paused y Unpaused se emiten correctamente.
 
-
-5. Tests de Integración
-	1.	Flujo completo de compra:
-	•	Confirmar que un usuario pueda:
-	1.	Registrarse en la allowlist.
-	2.	Comprar un token exitosamente.
-	3.	Verificar su balance después de la compra.
-	2.	Interacción con Custodian:
-	•	Probar que los tokens adquiridos puedan ser congelados y descongelados correctamente.
-	3.	Flujo con Tesoro:
-	•	Verificar que los fondos enviados en la compra lleguen al contrato Treasury y que puedan ser retirados.
-	4.	Errores comunes:
-	•	Confirmar que las funciones clave se revierten en condiciones adversas (sin fondos suficientes, contratos no inicializados, etc.).
-
-6. Tests de Seguridad
-	1.	Reentrancy:
-	•	Asegurar que el contrato no sea vulnerable a ataques de reentrancy durante transferencias de fondos.
-	2.	Roles no autorizados:
-	•	Probar que funciones protegidas no puedan ser ejecutadas por usuarios sin permisos.
-	3.	Límites de suministro:
-	•	Validar que el suministro máximo no pueda ser excedido bajo ninguna circunstancia.
 
 
 
@@ -46,120 +10,160 @@
         expect(
           await myFirstDog.hasRole(
             await myFirstDog.DEFAULT_ADMIN_ROLE(),
-            owner.address,
-          ),
+            owner.address
+          )
         ).to.be.true;
         expect(
           await myFirstDog.hasRole(
             await myFirstDog.MINTER_ROLE(),
-            owner.address,
-          ),
+            owner.address
+          )
         ).to.be.true;
         expect(await myFirstDog.balanceOf(owner.address)).to.equal(1);
       });
     });
-
+  
     describe("Buying Tokens", function () {
       beforeEach(async function () {
         await allowlist.allowUser(user1.address);
       });
-
+  
       it("should allow purchase if user is on the Allowlist", async function () {
         await myFirstDog.connect(user1).buy({ value: PRICE });
         expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
       });
-
+  
       it("should revert if user is not on the Allowlist", async function () {
         await expect(
-          myFirstDog.connect(user2).buy({ value: PRICE }),
+          myFirstDog.connect(user2).buy({ value: PRICE })
         ).to.be.revertedWith("Allowlist: Not allowed");
       });
-
+  
       it("should revert if user has already purchased", async function () {
         await myFirstDog.connect(user1).buy({ value: PRICE });
         await expect(
-          myFirstDog.connect(user1).buy({ value: PRICE }),
+          myFirstDog.connect(user1).buy({ value: PRICE })
         ).to.be.revertedWith("Already purchased");
       });
 
-      it("should revert if maximum supply is reached", async function () {
-        const availableSupply = MAX_SUPPLY - 1; // Resta el token inicial del constructor
-        const priceBN = ethers.parseEther("0.1");
-
-        // Asegúrate de que haya suficientes signers para cubrir el suministro
-        const requiredSigners = availableSupply + 3; // Contempla los iniciales + requeridos
-
-        if (signers.length < requiredSigners) {
-          throw new Error(
-            `Not enough signers available: ${signers.length} provided, ${requiredSigners} required`,
-          );
-        }
-
-        for (let i = 0; i < availableSupply; i++) {
-          const tempSigner = signers[i + 3]; // Comienza después de los iniciales
-          await allowlist.allowUser(tempSigner.address);
-
-          // Financiar al signer temporal con suficiente ETH para cubrir la transacción
-          await owner.sendTransaction({
-            to: tempSigner.address,
-            value: priceBN,
-          });
-
-          // Realizar la compra
-          await myFirstDog.connect(tempSigner).buy({ value: priceBN });
-        }
-
-        // Intentar una compra adicional debería fallar
-        await allowlist.allowUser(user1.address);
-        await expect(
-          myFirstDog.connect(user1).buy({ value: priceBN }),
-        ).to.be.revertedWith("Max supply reached");
-      });
-
+  
       it("should revert if incorrect ETH amount is sent", async function () {
         await expect(
-          myFirstDog.connect(user1).buy({ value: ethers.parseEther("0.05") }),
+          myFirstDog.connect(user1).buy({ value: ethers.parseEther("0.05") })
         ).to.be.revertedWith("Incorrect payment amount");
       });
+  
+      it("should revert if maximum supply is reached", async function () {
+        // Paso 1: Verificar el suministro inicial
+        const initialSupply = (await myFirstDog.totalSupply()).toString();
+        console.log("Initial Supply:", initialSupply);
+    
+        // Paso 2: Calcular el suministro restante
+        const remainingSupply = MAX_SUPPLY - parseInt(initialSupply);
+        console.log("Remaining Supply:", remainingSupply);
+    
+        // Paso 3: Permitir compras hasta alcanzar el límite máximo
+        for (let i = 0; i < remainingSupply; i++) {
+            const tempSigner = signers[i + 4]; // Empezar después de los primeros 4 signers
+            await allowlist.allowUser(tempSigner.address);
+    
+            await owner.sendTransaction({
+                to: tempSigner.address,
+                value: PRICE,
+            });
+    
+            await myFirstDog.connect(tempSigner).buy({ value: PRICE });
+        }
+    
+        // Confirmar que el suministro actual alcanza el máximo
+        const currentSupply = (await myFirstDog.totalSupply()).toString();
+        console.log("Current Supply:", currentSupply);
+        expect(parseInt(currentSupply)).to.equal(MAX_SUPPLY);
+    
+        // Paso 4: Intentar superar el máximo
+        await allowlist.allowUser(user1.address);
+        await expect(
+            myFirstDog.connect(user1).buy({ value: PRICE })
+        ).to.be.revertedWith("Max supply reached");
     });
-
+  
+      it("should emit Transfer event on successful purchase", async function () {
+        await expect(myFirstDog.connect(user1).buy({ value: PRICE }))
+          .to.emit(myFirstDog, "Transfer")
+          .withArgs(AddressZero, user1.address, 1);
+      });
+  
+    });
+  
     describe("Pausable", function () {
       it("should allow pausing and unpausing by PAUSER_ROLE", async function () {
-        await allowlist.allowUser(user1.address); // Asegúrate de que esté en la Allowlist
-
-        // Pausar el contrato
+        await allowlist.allowUser(user1.address);
+  
         await myFirstDog.pause();
-        expect(await myFirstDog.paused()).to.be.true; // Verifica que el contrato está pausado
-
-        // Intentar comprar mientras está pausado debería fallar con el error personalizado EnforcedPause
+        expect(await myFirstDog.paused()).to.be.true;
+  
         await expect(
           myFirstDog.connect(user1).buy({ value: PRICE })
         ).to.be.revertedWithCustomError(myFirstDog, "EnforcedPause");
-
-        // Despausar el contrato
+  
         await myFirstDog.unpause();
-        expect(await myFirstDog.paused()).to.be.false; // Verifica que el contrato no está pausado
-
-        // Ahora debería permitir la compra
+        expect(await myFirstDog.paused()).to.be.false;
+  
         await myFirstDog.connect(user1).buy({ value: PRICE });
         expect(await myFirstDog.balanceOf(user1.address)).to.equal(1);
       });
-
+  
+      it("should emit Paused and Unpaused events", async function () {
+        await expect(myFirstDog.pause()).to.emit(myFirstDog, "Paused").withArgs(owner.address);
+        await expect(myFirstDog.unpause()).to.emit(myFirstDog, "Unpaused").withArgs(owner.address);
+      });
+  
       it("should revert if non-PAUSER_ROLE tries to pause", async function () {
-        await expect(myFirstDog.connect(user1).pause()).to.be.reverted;
+        await expect(myFirstDog.connect(user1).pause()).to.be.revertedWithCustomError(
+          myFirstDog,
+          "AccessControlUnauthorizedAccount"
+        );
       });
     });
-
+  
     describe("Minting", function () {
       it("should allow minting by MINTER_ROLE", async function () {
         await myFirstDog.mint(user1.address, 10);
         expect(await myFirstDog.balanceOf(user1.address)).to.equal(10);
       });
-
+  
       it("should revert if minting exceeds MAX_SUPPLY", async function () {
         await expect(
-          myFirstDog.mint(user1.address, MAX_SUPPLY + 1),
+          myFirstDog.mint(user1.address, MAX_SUPPLY + 1)
         ).to.be.revertedWith("Exceeds maximum supply");
+      });
+  
+      it("should revert if non-MINTER_ROLE tries to mint", async function () {
+        await expect(
+          myFirstDog.connect(user1).mint(user2.address, 10)
+        ).to.be.revertedWithCustomError(myFirstDog, "AccessControlUnauthorizedAccount");
+      });
+    });
+  
+    describe("Roles and Permissions", function () {
+      it("should allow only DEFAULT_ADMIN_ROLE to assign roles", async function () {
+        await expect(
+          myFirstDog
+            .connect(user1)
+            .grantRole(await myFirstDog.MINTER_ROLE(), user1.address)
+        ).to.be.revertedWithCustomError(myFirstDog, "AccessControlUnauthorizedAccount");
+  
+        await myFirstDog.grantRole(await myFirstDog.MINTER_ROLE(), user1.address);
+        expect(
+          await myFirstDog.hasRole(await myFirstDog.MINTER_ROLE(), user1.address)
+        ).to.be.true;
+      });
+  
+      it("should revert protected functions if called by unauthorized users", async function () {
+        await expect(myFirstDog.connect(user1).pause()).to.be.revertedWithCustomError(
+          myFirstDog,
+          "AccessControlUnauthorizedAccount"
+        );
       });
     });
   });
@@ -357,5 +361,169 @@
         const availableBalance = await custodian.availableBalance(user1.address);
         expect(availableBalance).to.equal(0); // Todos los tokens están congelados
       });
+    });
+  });
+
+  describe("Treasury", function () {
+    describe("Fund Reception", function () {
+      it("should allow receiving ETH and emit FundsReceived event", async function () {
+        const tx = await owner.sendTransaction({
+          to: treasury.target,
+          value: PRICE,
+        });
+  
+        // Verificar que el evento FundsReceived se emitió
+        await expect(tx)
+          .to.emit(treasury, "FundsReceived")
+          .withArgs(owner.address, PRICE);
+  
+        // Verificar que el balance del contrato aumentó correctamente
+        expect(await treasury.getBalance()).to.equal(PRICE);
+      });
+    });
+  
+    describe("Fund Withdrawals", function () {
+      beforeEach(async function () {
+        // Asignar el rol de TREASURY_MANAGER_ROLE al treasuryManager
+        await treasury
+          .connect(owner)
+          .grantRole(
+            await treasury.TREASURY_MANAGER_ROLE(),
+            treasuryManager.address
+          );
+  
+        // Enviar fondos al contrato
+        await owner.sendTransaction({ to: treasury.target, value: PRICE });
+      });
+  
+      it("should allow withdrawals by TREASURY_MANAGER_ROLE", async function () {
+        const initialBalance = await ethers.provider.getBalance(
+          treasuryManager.address
+        );
+  
+        // Realizar el retiro
+        await treasury
+          .connect(treasuryManager)
+          .withdraw(treasuryManager.address, PRICE);
+  
+        const finalBalance = await ethers.provider.getBalance(
+          treasuryManager.address
+        );
+        expect(finalBalance).to.be.gt(initialBalance);
+      });
+  
+      it("should revert if non-TREASURY_MANAGER_ROLE tries to withdraw", async function () {
+        await expect(
+          treasury.connect(user1).withdraw(user1.address, PRICE)
+        ).to.be.revertedWithCustomError(treasury, "AccessControlUnauthorizedAccount").withArgs(
+          user1.address,
+          await treasury.TREASURY_MANAGER_ROLE()
+        );
+      });
+  
+      it("should revert if withdrawal amount exceeds available balance", async function () {
+        const excessiveAmount = ethers.parseEther("1");
+  
+        // Intentar un retiro que exceda el balance
+        await expect(
+          treasury
+            .connect(treasuryManager)
+            .withdraw(treasuryManager.address, excessiveAmount)
+        ).to.be.revertedWith("Treasury: Insufficient balance");
+      });
+    });
+  
+    describe("Balance Queries", function () {
+      it("should return the correct balance of the contract", async function () {
+        // Enviar ETH al contrato
+        await owner.sendTransaction({ to: treasury.target, value: PRICE });
+  
+        // Verificar que el balance reportado por getBalance es correcto
+        expect(await treasury.getBalance()).to.equal(PRICE);
+      });
+  
+      it("should return zero balance if no funds have been deposited", async function () {
+        // Verificar que el balance sea 0 inicialmente
+        expect(await treasury.getBalance()).to.equal(0);
+      });
+    });
+  });
+
+  describe("Full Workflow", function () {
+    it("should allow a user to register, buy a token, and verify balance", async function () {
+      // Paso 1: Registrar al usuario en la allowlist
+      await allowlist.allowUser(user1.address);
+      const isAllowed = await allowlist.isAllowed(user1.address);
+      expect(isAllowed).to.be.true;
+  
+      // Paso 2: Comprar un token
+      await myFirstDog.connect(user1).buy({ value: PRICE });
+  
+      // Paso 3: Verificar el balance del usuario
+      const balance = await myFirstDog.balanceOf(user1.address);
+      expect(balance).to.equal(1);
+    });
+  
+    it("should allow tokens to be frozen and unfrozen by Custodian", async function () {
+      // Paso 1: Registrar al usuario y realizar la compra
+      await allowlist.allowUser(user1.address);
+      await myFirstDog.connect(user1).buy({ value: PRICE });
+  
+      // Paso 2: Congelar el token adquirido
+      await custodian.freeze(user1.address, 1);
+      const frozenBalance = await custodian.frozenBalance(user1.address);
+      expect(frozenBalance).to.equal(1);
+  
+      // Paso 3: Descongelar el token
+      await custodian.unfreeze(user1.address, 1);
+      const unfrozenBalance = await custodian.frozenBalance(user1.address);
+      expect(unfrozenBalance).to.equal(0);
+    });
+  
+    it("should ensure funds are transferred to Treasury and can be withdrawn", async function () {
+      // Paso 1: Obtener balance inicial del contrato Treasury
+      const initialTreasuryBalance = await treasury.getBalance();
+  
+      // Paso 2: Registrar al usuario y realizar la compra
+      await allowlist.allowUser(user1.address);
+      await myFirstDog.connect(user1).buy({ value: PRICE });
+  
+      // Paso 3: Verificar que los fondos han sido transferidos al Tesoro
+      const finalTreasuryBalance = await treasury.getBalance();
+      expect(finalTreasuryBalance).to.equal(initialTreasuryBalance + PRICE);
+  
+      // Paso 4: Retirar fondos del Tesoro
+      await treasury.withdraw(owner.address, finalTreasuryBalance);
+      const ownerBalance = await ethers.provider.getBalance(owner.address);
+      expect(ownerBalance).to.be.above(initialTreasuryBalance); // Confirmar que el dueño recibe los fondos
+    });
+  
+    it("should revert key functions under adverse conditions", async function () {
+      // Paso 1: Crear el MockTreasury
+      const MockTreasury = await ethers.getContractFactory("MockTreasury");
+      const mockTreasury = await MockTreasury.deploy();
+      await mockTreasury.waitForDeployment();
+    
+      // Paso 2: Desplegar el contrato MyFirstDog con MockTreasury
+      const failingMyFirstDog = await MyFirstDog.deploy(allowlist.target, mockTreasury.target);
+      await failingMyFirstDog.waitForDeployment();
+    
+      // Paso 3: Intentar comprar sin inicializar correctamente el Treasury
+      await allowlist.allowUser(user1.address);
+      await expect(
+        failingMyFirstDog.connect(user1).buy({ value: PRICE })
+      ).to.be.revertedWith("Transfer to Treasury failed");
+    
+      // Otros casos adversos:
+      // Intentar comprar sin estar en la allowlist
+      await expect(
+        myFirstDog.connect(user2).buy({ value: PRICE })
+      ).to.be.revertedWith("Allowlist: Not allowed");
+    
+      // Intentar comprar con una cantidad incorrecta de ETH
+      await allowlist.allowUser(user1.address);
+      await expect(
+        myFirstDog.connect(user1).buy({ value: ethers.parseEther("0.05") })
+      ).to.be.revertedWith("Incorrect payment amount");
     });
   });

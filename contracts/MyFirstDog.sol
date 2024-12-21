@@ -8,6 +8,7 @@ import {ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {Custodian} from "./Custodian.sol";
 import {Allowlist} from "./Allowlist.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface ITreasury {
     function getBalance() external view returns (uint256);
@@ -18,7 +19,8 @@ contract MyFirstDog is
     ERC20Burnable,
     ERC20Pausable,
     ERC20Permit,
-    AccessControl
+    AccessControl,
+    ReentrancyGuard
 {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -68,7 +70,7 @@ contract MyFirstDog is
     }
 
     // ---- Compra de Tokens ----
-    function buy() external payable whenNotPaused {
+    function buy() external payable whenNotPaused nonReentrant {
         require(
             address(allowlistContract) != address(0),
             "Allowlist not initialized"
